@@ -23,6 +23,7 @@ import FilterButtons from "./FilterButtons/FilterButtons";
 import LiveClock from "./LiveClock/LiveClock";
 import DynamicClockIcon from "./DynamicClockIcon/DynamicClockIcon";
 import DisabledSection from "./DisabledSection/DisabledSection";
+import NotificationsPage from "./NotificationsPage/NotificationsPage";
 
 export {
   Header,
@@ -50,4 +51,5 @@ export {
   LiveClock,
   DynamicClockIcon,
   DisabledSection,
+  NotificationsPage,
 };

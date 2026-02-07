@@ -55,3 +55,10 @@ export enum ExceptionType {
   MULTI_DAYS_CLOSE = "MULTI_DAYS_CLOSE",
   RANGE_DAYS_CLOSE = "RANGE_DAYS_CLOSE",
 }
+
+export enum NotificationType {
+  SYSTEM = "SYSTEM",
+  BOOKING = "BOOKING",
+  MESSAGE = "MESSAGE",
+  SERVICE_CHANGE = "SERVICE_CHANGE",
+}

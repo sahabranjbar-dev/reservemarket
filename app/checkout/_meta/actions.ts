@@ -5,6 +5,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/utils/authOptions";
 import { revalidatePath } from "next/cache";
 import { createLog } from "@/log/log.service";
+import { notificationQueue } from "@/queues/notification.queue";
+import { NotificationType } from "@/constants/enums";
 
 export async function createBookingAction(params: {
   businessId: string;
@@ -56,10 +58,10 @@ export async function createBookingAction(params: {
         businessId: businessId,
         isActive: true,
         deletedAt: null,
-        services: { some: { serviceId: serviceId } },
+        services: { some: { serviceId } },
       },
       include: {
-        business: { select: { slug: true } },
+        business: { select: { slug: true, ownerId: true, businessName: true } },
         bookings: {
           where: {
             status: { in: ["PENDING", "CONFIRMED"] },
@@ -68,6 +70,7 @@ export async function createBookingAction(params: {
           },
           select: { id: true },
         },
+        services: { select: { serviceId: true } },
       },
     });
 
@@ -105,6 +108,10 @@ export async function createBookingAction(params: {
         customerNotes,
         status: "PENDING",
       },
+      include: {
+        staff: true,
+        business: true,
+      },
     });
 
     revalidatePath(`/business/detail/${businessId}/${staff.business.slug}`);
@@ -122,6 +129,62 @@ export async function createBookingAction(params: {
         startTime,
         endTime,
       },
+    });
+
+    // 5️⃣ جمع‌آوری کاربران برای Notification
+    const admins = await prisma.user.findMany({
+      where: {
+        roles: { some: { role: "SUPER_ADMIN" } },
+      },
+      select: { id: true },
+    });
+
+    // همه Staff های مرتبط با سرویس (در این مثال فقط یک نفر)
+    const staffMembers = await prisma.staffMember.findMany({
+      where: { id: staffId },
+      select: { id: true, userId: true },
+    });
+
+    const notifications = [
+      // Customer
+      {
+        userId: session.user.id,
+        title: "رزرو شما ثبت شد",
+        body: `رزرو شما برای سرویس ${service.name} با موفقیت ثبت شد.`,
+        sendSMS: true,
+      },
+      // Owner
+      {
+        userId: booking.business.ownerId,
+        title: "رزرو جدید در کسب‌وکار شما",
+        body: `یک رزرو جدید برای سرویس ${service.name} توسط مشتری ثبت شد.`,
+        sendSMS: false,
+      },
+      // Staff
+      ...staffMembers.map((s) => ({
+        userId: s.userId,
+        title: "رزرو جدید",
+        body: `رزروی جدید برای سرویس ${service.name} ثبت شد.`,
+        sendSMS: false,
+      })),
+      // Admins
+      ...admins.map((a) => ({
+        userId: a.id,
+        title: "رزرو جدید در سیستم",
+        body: `یک رزرو جدید برای سرویس ${service.name} ثبت شد.`,
+        sendSMS: false,
+      })),
+    ];
+
+    // 6️⃣ یکتا کردن Notification ها بر اساس userId
+    const uniqueNotifications = notifications.filter(
+      (v, i, a) => a.findIndex((t) => t.userId === v.userId) === i,
+    );
+
+    // 7️⃣ اضافه کردن به Queue
+    await notificationQueue.add("CREATE_NOTIFICATION", {
+      notifications: uniqueNotifications,
+      type: NotificationType.BOOKING,
     });
 
     return {

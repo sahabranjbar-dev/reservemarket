@@ -215,7 +215,7 @@ function getUserRole(session: any): UserRoleType {
   return "customer";
 }
 
-function useSidebarConfig() {
+export function useSidebarConfig() {
   const { data: session, status } = useSession();
   const pathname = usePathname();
 
