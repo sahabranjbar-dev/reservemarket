@@ -1,7 +1,13 @@
 "use server";
 
+import { getNotificationContent } from "@/app/dashboard/business/bookings/_meta/utils";
 import { createAuditLog } from "@/audit/audit.service";
-import { BookingStatus, BusinessRole } from "@/constants/enums";
+import {
+  BookingStatus,
+  BusinessRole,
+  NotificationType,
+} from "@/constants/enums";
+import { notificationQueue } from "@/queues/notification.queue";
 import { authOptions } from "@/utils/authOptions";
 import prisma from "@/utils/prisma";
 import { getServerSession } from "next-auth";
@@ -234,7 +240,9 @@ export async function updateBookingStatusAction({ bookingId, status }: Params) {
     const booking = await prisma.booking.findFirst({
       where: {
         id: bookingId,
-        staffId: session.user.id, // 🔐 فقط نوبت‌های خودش
+        staff: {
+          userId: session.user.id,
+        }, // 🔐 فقط نوبت‌های خودش
       },
       select: {
         id: true,
@@ -259,10 +267,29 @@ export async function updateBookingStatusAction({ bookingId, status }: Params) {
     }
 
     // 5️⃣ آپدیت
-    await prisma.booking.update({
+    const updatedBooking = await prisma.booking.update({
       where: { id: bookingId },
       data: {
         status,
+      },
+      include: {
+        business: {
+          select: {
+            businessMembers: true,
+          },
+        },
+        service: {
+          select: {
+            name: true,
+          },
+        },
+        customer: {
+          select: {
+            id: true,
+            fullName: true,
+            phone: true,
+          },
+        },
       },
     });
 
@@ -277,6 +304,31 @@ export async function updateBookingStatusAction({ bookingId, status }: Params) {
         from: booking.status,
         to: status,
       },
+    });
+
+    const { title, body } = getNotificationContent(
+      updatedBooking.status as BookingStatus,
+      updatedBooking.service.name,
+    );
+
+    await notificationQueue.add("CREATE_NOTIFICATION", {
+      notifications: [
+        {
+          userId: updatedBooking.customer.id,
+          title,
+          body,
+          sendSMS: true,
+        },
+        ...updatedBooking.business.businessMembers.map((item) => {
+          return {
+            userId: item.userId,
+            title: "تغییر وضعیت رزرو",
+            body: `رزرو برای مشتری ${updatedBooking.customer.fullName || updatedBooking.customer.phone} به وضعیت ${updatedBooking.status} تغییر کرد.`,
+            sendSMS: true,
+          };
+        }),
+      ],
+      type: NotificationType.BOOKING,
     });
 
     revalidatePath("/dashboard/staff/bookings");

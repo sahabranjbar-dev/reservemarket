@@ -4,6 +4,8 @@ import prisma from "@/utils/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/utils/authOptions";
 import { revalidatePath } from "next/cache";
+import { notificationQueue } from "@/queues/notification.queue";
+import { NotificationType } from "@/constants/enums";
 
 export async function getAvailableSlotsAction(params: {
   businessId: string;
@@ -244,6 +246,38 @@ export async function updateBookingAction(params: {
         endTime: endDate,
         status: "PENDING", // بعد از تغییر نیاز به تأیید مجدد
       },
+      include: {
+        business: {
+          select: {
+            businessMembers: true,
+          },
+        },
+        service: {
+          select: {
+            name: true,
+          },
+        },
+        customer: {
+          select: {
+            fullName: true,
+            phone: true,
+          },
+        },
+      },
+    });
+
+    await notificationQueue.add("CREATE_NOTIFICATION", {
+      notifications: [
+        ...updatedBooking.business.businessMembers.map((item) => {
+          return {
+            userId: item.userId,
+            title: "رزرو توسط مشتری تغییر کرد",
+            body: `رزرو برای سرویس ${updatedBooking.service.name} توسط ${updatedBooking.customer.fullName || updatedBooking.customer.phone} تغییر کرد.`,
+            sendSMS: true,
+          };
+        }),
+      ],
+      type: NotificationType.BOOKING,
     });
 
     // log and send sms to owner and staffs
@@ -300,6 +334,38 @@ export async function cancelBookingAction({
         canceledAt: new Date(),
         cancelReason: reason,
       },
+      include: {
+        business: {
+          select: {
+            businessMembers: true,
+          },
+        },
+        service: {
+          select: {
+            name: true,
+          },
+        },
+        customer: {
+          select: {
+            phone: true,
+            fullName: true,
+          },
+        },
+      },
+    });
+
+    await notificationQueue.add("CREATE_NOTIFICATION", {
+      notifications: [
+        ...updatedBooking.business.businessMembers.map((item) => {
+          return {
+            userId: item.userId,
+            title: "رزرو توسط مشتری لغو شد",
+            body: `رزرو برای سرویس ${updatedBooking.service.name} توسط ${updatedBooking.customer.fullName || updatedBooking.customer.phone} لغو شد.`,
+            sendSMS: true,
+          };
+        }),
+      ],
+      type: NotificationType.BOOKING,
     });
 
     return { success: true, message: "رزرو با موفقیت لغو شد" };

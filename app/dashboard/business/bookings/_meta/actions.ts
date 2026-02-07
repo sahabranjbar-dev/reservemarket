@@ -4,8 +4,10 @@ import prisma from "@/utils/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/utils/authOptions";
 import { revalidatePath } from "next/cache";
-import { BookingStatus } from "@/constants/enums";
+import { BookingStatus, NotificationType } from "@/constants/enums";
 import { createAuditLog } from "@/audit/audit.service";
+import { getNotificationContent } from "./utils";
+import { notificationQueue } from "@/queues/notification.queue";
 
 export async function updateBookingStatusAction(params: {
   bookingId: string;
@@ -33,9 +35,29 @@ export async function updateBookingStatusAction(params: {
       return { success: false, error: "رزرو یافت نشد" };
     }
 
-    await prisma.booking.update({
+    const updatedBooking = await prisma.booking.update({
       where: { id: bookingId },
       data: { status },
+      select: {
+        service: {
+          select: {
+            name: true,
+          },
+        },
+        status: true,
+        business: {
+          select: {
+            businessMembers: true,
+          },
+        },
+        customer: {
+          select: {
+            fullName: true,
+            id: true,
+            phone: true,
+          },
+        },
+      },
     });
 
     await createAuditLog({
@@ -49,6 +71,31 @@ export async function updateBookingStatusAction(params: {
         from: booking.status,
         to: status,
       },
+    });
+
+    const { title, body } = getNotificationContent(
+      updatedBooking.status as BookingStatus,
+      updatedBooking.service.name,
+    );
+
+    await notificationQueue.add("CREATE_NOTIFICATION", {
+      notifications: [
+        {
+          userId: booking.customerId,
+          title,
+          body,
+          sendSMS: true,
+        },
+        ...updatedBooking.business.businessMembers.map((item) => {
+          return {
+            userId: item.userId,
+            title: "تغییر وضعیت رزرو",
+            body: `رزرو برای مشتری ${updatedBooking.customer.fullName || updatedBooking.customer.phone} به وضعیت ${updatedBooking.status} تغییر کرد.`,
+            sendSMS: true,
+          };
+        }),
+      ],
+      type: NotificationType.BOOKING,
     });
 
     revalidatePath("/dashboard/business/bookings");
