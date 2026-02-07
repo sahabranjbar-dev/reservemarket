@@ -4,6 +4,7 @@ import { authOptions } from "@/utils/authOptions";
 import prisma from "@/utils/prisma";
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
+import { createLog } from "@/log/log.service"; // اضافه شد
 
 interface IupsertService {
   name: string;
@@ -64,6 +65,14 @@ export async function upsertService(data: IupsertService) {
               }),
             ),
           );
+          await createLog({
+            level: "INFO",
+            message: "Future bookings updated after service change",
+            context: {
+              serviceId: service.id,
+              updatedBookings: futureBookings.length,
+            },
+          });
         }
       }
 
@@ -82,6 +91,11 @@ export async function upsertService(data: IupsertService) {
         });
 
         if (validStaffs.length !== staffIds.length) {
+          await createLog({
+            level: "ERROR",
+            message: "Attempted to assign invalid staff to service",
+            context: { serviceId: id || "N/A", staffIds },
+          });
           throw new Error("INVALID_STAFF");
         }
 
@@ -106,15 +120,26 @@ export async function upsertService(data: IupsertService) {
         },
       });
 
+      await createLog({
+        level: "INFO",
+        message: id ? "Service updated" : "Service created",
+        context: { serviceId: service.id, userId: session.user.id },
+      });
+
       return service;
     });
 
-    // 5. ری‌والید مسیر
     revalidatePath("/dashboard/business/resources/services");
 
     return { success: true, message: "عملیات با موفقیت انجام شد", service };
   } catch (error: any) {
     console.error("upsertService Error:", error);
+
+    await createLog({
+      level: "ERROR",
+      message: "upsertService failed",
+      context: { error: error.message, data },
+    });
 
     if (error.message === "INVALID_STAFF") {
       return {
@@ -157,14 +182,26 @@ export async function deleteService(serviceId: string) {
           metadata: {},
         },
       });
+
+      await createLog({
+        level: "INFO",
+        message: "Service deleted",
+        context: { serviceId, userId: session.user.id },
+      });
     });
 
-    // 4. ری‌والید مسیر
     revalidatePath("/dashboard/business/resources/services");
 
     return { success: true, message: "خدمت حذف شد." };
-  } catch (error) {
+  } catch (error: any) {
     console.error("deleteService Error:", error);
+
+    await createLog({
+      level: "ERROR",
+      message: "deleteService failed",
+      context: { error: error.message, serviceId },
+    });
+
     return { success: false, error: "خطای سرور" };
   }
 }

@@ -4,6 +4,7 @@ import prisma from "@/utils/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/utils/authOptions";
 import { revalidatePath } from "next/cache";
+import { createLog } from "@/log/log.service";
 
 export async function createBookingAction(params: {
   businessId: string;
@@ -17,6 +18,11 @@ export async function createBookingAction(params: {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
+    await createLog({
+      level: "WARN",
+      message: "کاربر غیرمجاز تلاش به ایجاد رزرو کرد",
+      context: { params },
+    });
     return {
       success: false,
       error: "لطفاً ابتدا وارد شوید",
@@ -30,14 +36,20 @@ export async function createBookingAction(params: {
       select: { duration: true, price: true, name: true },
     });
 
-    if (!service) return { success: false, error: "سرویس یافت نشد" };
+    if (!service) {
+      await createLog({
+        level: "WARN",
+        message: "سرویس یافت نشد",
+        context: { serviceId, userId: session.user.id },
+      });
+      return { success: false, error: "سرویس یافت نشد" };
+    }
 
     // 2. ساخت زمان‌ها
     const startTime = new Date(`${date}T${time}:00`);
     const endTime = new Date(startTime.getTime() + service.duration * 60000);
 
     // 3. بررسی نهایی دسترسی پرسنل (Safety Check)
-    // حتی اگر کلاینت هک کند، چک می‌کنیم که این پرسنل برای این سرویس آزاد است
     const staff = await prisma.staffMember.findFirst({
       where: {
         id: staffId,
@@ -60,10 +72,20 @@ export async function createBookingAction(params: {
     });
 
     if (!staff) {
+      await createLog({
+        level: "WARN",
+        message: "پرسنل نامعتبر برای رزرو انتخاب شد",
+        context: { staffId, businessId, userId: session.user.id },
+      });
       return { success: false, error: "پرسنل نامعتبر است." };
     }
 
     if (staff.bookings.length > 0) {
+      await createLog({
+        level: "INFO",
+        message: "رزرو تداخل داشت و موفق نبود",
+        context: { staffId, startTime, endTime, userId: session.user.id },
+      });
       return {
         success: false,
         error:
@@ -77,7 +99,7 @@ export async function createBookingAction(params: {
         businessId,
         customerId: session.user.id,
         serviceId,
-        staffId, // استفاده از پرسنل ارسالی
+        staffId,
         startTime,
         endTime,
         customerNotes,
@@ -89,12 +111,34 @@ export async function createBookingAction(params: {
     revalidatePath("/checkout");
     revalidatePath("/dashboard/business/bookings");
 
+    await createLog({
+      level: "INFO",
+      message: "رزرو با موفقیت ایجاد شد",
+      context: {
+        bookingId: booking.id,
+        userId: session.user.id,
+        staffId,
+        serviceId,
+        startTime,
+        endTime,
+      },
+    });
+
     return {
       success: true,
       message: "رزرو شما با موفقیت ثبت شد",
       bookingId: booking.id,
     };
   } catch (error) {
+    await createLog({
+      level: "ERROR",
+      message: "خطا در ایجاد رزرو",
+      context: {
+        error: (error as any).message || error,
+        params,
+        userId: session?.user?.id,
+      },
+    });
     console.error("Booking Error:", error);
     return { success: false, error: "خطا در ثبت رزرو" };
   }
@@ -107,11 +151,21 @@ export async function getServiceDetail(serviceId: string) {
     });
 
     if (!service) {
+      await createLog({
+        level: "WARN",
+        message: "سرویس یافت نشد هنگام دریافت جزئیات",
+        context: { serviceId },
+      });
       return { success: false, error: "سرویس یافت نشد" };
     }
 
     return { success: true, service };
   } catch (error) {
+    await createLog({
+      level: "ERROR",
+      message: "خطا در دریافت جزئیات سرویس",
+      context: { error: (error as any).message || error, serviceId },
+    });
     console.error("get service Error:", error);
     return { success: false, error: "خطا در دریافت سرویس" };
   }
@@ -132,7 +186,6 @@ export async function getAvailableStaffAction(params: {
   const { businessId, serviceId, date, time } = params;
 
   try {
-    // 1. دریافت اطلاعات سرویس
     const service = await prisma.service.findUnique({
       where: { id: serviceId },
       select: { duration: true },
@@ -141,13 +194,11 @@ export async function getAvailableStaffAction(params: {
     if (!service) throw new Error("Service not found");
     const serviceDuration = service.duration;
 
-    // ساخت بازه زمانی
     const potentialStart = new Date(`${date}T${time}:00`);
     const potentialEnd = new Date(
       potentialStart.getTime() + serviceDuration * 60000,
     );
 
-    // 2. دریافت تمام پرسنل مرتبط
     const staffList = await prisma.staffMember.findMany({
       where: {
         businessId: businessId,
@@ -160,7 +211,6 @@ export async function getAvailableStaffAction(params: {
         exceptions: true,
         bookings: {
           where: {
-            // رزروهای تداخل دار
             status: { in: ["PENDING", "CONFIRMED"] },
             startTime: { lt: potentialEnd },
             endTime: { gt: potentialStart },
@@ -170,11 +220,9 @@ export async function getAvailableStaffAction(params: {
       },
     });
 
-    // 3. فیلتر کردن پرسنل‌ها
     const availableStaff: AvailableStaff[] = [];
 
     for (const staff of staffList) {
-      // الف) چک کردن استثنای روزانه
       const isOffToday = staff.exceptions.some(
         (exc) =>
           exc.isClosed &&
@@ -182,18 +230,15 @@ export async function getAvailableStaffAction(params: {
       );
       if (isOffToday) continue;
 
-      // ب) چک کردن شیفت روزانه
       const dayOfWeek = potentialStart.getDay();
-      const dbDayOfWeek = (dayOfWeek + 1) % 7; // تبدیل به دیتابیس
+      const dbDayOfWeek = (dayOfWeek + 1) % 7;
       const schedule = staff.schedules.find((s) => s.dayOfWeek === dbDayOfWeek);
 
       if (!schedule || schedule.isClosed) continue;
 
-      // ج) چک کردن تداخل رزرو
       const isBooked = staff.bookings.length > 0;
       if (isBooked) continue;
 
-      // اگر همه چیز اوکی بود اضافه کن
       availableStaff.push({
         id: staff.id,
         name: staff.name,
@@ -201,8 +246,25 @@ export async function getAvailableStaffAction(params: {
       });
     }
 
+    await createLog({
+      level: "INFO",
+      message: "دریافت لیست پرسنل در دسترس",
+      context: {
+        businessId,
+        serviceId,
+        date,
+        time,
+        availableCount: availableStaff.length,
+      },
+    });
+
     return { success: true, data: availableStaff };
   } catch (error) {
+    await createLog({
+      level: "ERROR",
+      message: "خطا در دریافت لیست پرسنل",
+      context: { error: (error as any).message || error, params },
+    });
     console.error("Get Staff Error:", error);
     return { success: false, error: "خطا در دریافت لیست پرسنل" };
   }
