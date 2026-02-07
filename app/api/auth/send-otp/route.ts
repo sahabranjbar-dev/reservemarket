@@ -1,4 +1,5 @@
 import api from "@/lib/axios";
+import { createLog } from "@/log/log.service";
 import { convertToEnglishDigits, mobileValidation } from "@/utils/common";
 import { ServerError } from "@/utils/errors";
 import prisma from "@/utils/prisma";
@@ -53,17 +54,27 @@ export async function POST(request: NextRequest) {
 
     // 1. استانداردسازی و اعتبارسنجی شماره تلفن
     if (!body.phone) {
+      await createLog({
+        level: "WARN",
+        message: "شماره تلفن ارسال نشده است",
+        context: { body },
+      });
       return NextResponse.json(
         { error: "شماره تلفن وارد نشده است." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const validation = mobileValidation().safeParse(body);
     if (!validation.success) {
+      await createLog({
+        level: "WARN",
+        message: "اعتبارسنجی شماره تلفن ناموفق بود",
+        context: { body, errors: validation.error.format() },
+      });
       return NextResponse.json(
         { error: validation.error?.message || "اطلاعات نامعتبر است." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -78,13 +89,18 @@ export async function POST(request: NextRequest) {
       const timeSinceLast = new Date().getTime() - lastOtp.createdAt.getTime();
       if (timeSinceLast < RESEND_DELAY) {
         const remainingSeconds = Math.ceil(
-          (RESEND_DELAY - timeSinceLast) / 1000
+          (RESEND_DELAY - timeSinceLast) / 1000,
         );
+        await createLog({
+          level: "INFO",
+          message: "کاربر سعی در دریافت OTP قبل از پایان زمان انتظار داشت",
+          context: { phone, remainingSeconds },
+        });
         return NextResponse.json(
           {
             error: `لطفاً ${remainingSeconds} ثانیه برای دریافت مجدد کد صبر کنید.`,
           },
-          { status: 429 }
+          { status: 429 },
         );
       }
     }
@@ -116,6 +132,11 @@ export async function POST(request: NextRequest) {
     // 6. ارسال پیامک
     // const smsSent = await sendSms(phone, code);
     // if (!smsSent) {
+    //   await createLog({
+    //     level: "ERROR",
+    //     message: "ارسال پیامک OTP با خطا مواجه شد",
+    //     context: { phone, code },
+    //   });
     //   return NextResponse.json(
     //     { error: "ارسال پیامک با خطا مواجه شد." },
     //     { status: 500 }
@@ -124,12 +145,23 @@ export async function POST(request: NextRequest) {
 
     console.log(code, "code");
 
+    await createLog({
+      level: "INFO",
+      message: "OTP با موفقیت ایجاد شد",
+      context: { phone, code, expiresAt: expirationDate },
+    });
+
     return NextResponse.json({
       success: true,
       message: "کد تایید با موفقیت ارسال شد",
       mobile: phone,
     });
   } catch (error) {
+    await createLog({
+      level: "ERROR",
+      message: "POST /otp Exception",
+      context: { error: (error as any).message || error },
+    });
     console.error("POST /otp Exception:", error);
     return ServerError();
   }

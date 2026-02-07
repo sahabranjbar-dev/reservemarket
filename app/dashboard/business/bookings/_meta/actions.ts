@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/utils/authOptions";
 import { revalidatePath } from "next/cache";
 import { BookingStatus } from "@/constants/enums";
+import { createAuditLog } from "@/audit/audit.service";
 
 export async function updateBookingStatusAction(params: {
   bookingId: string;
@@ -35,6 +36,19 @@ export async function updateBookingStatusAction(params: {
     await prisma.booking.update({
       where: { id: bookingId },
       data: { status },
+    });
+
+    await createAuditLog({
+      action: "BOOKING_STATUS_CHANGED",
+      entityType: "BOOKING",
+      entityId: booking.id,
+      businessId: booking.businessId,
+      performedBy: session.user.id,
+      actorRole: "OWNER",
+      metadata: {
+        from: booking.status,
+        to: status,
+      },
     });
 
     revalidatePath("/dashboard/business/bookings");

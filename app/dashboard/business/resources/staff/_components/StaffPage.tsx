@@ -38,6 +38,7 @@ import {
   updateStaffAction,
 } from "../_meta/actions";
 import { useConfirm } from "@/hooks/useConfirm";
+import { useSession } from "next-auth/react";
 
 // تایپ برای داده پرسنل
 type StaffMember = {
@@ -57,6 +58,8 @@ interface StaffPageProps {
 }
 
 const StaffPage = ({ businessId, initialStaff }: StaffPageProps) => {
+  const session = useSession();
+
   const confirm = useConfirm();
   const [staffList, setStaffList] = useState<StaffMember[]>(initialStaff);
   const [isPending, startTransition] = useTransition();
@@ -97,13 +100,18 @@ const StaffPage = ({ businessId, initialStaff }: StaffPageProps) => {
     form.append("phone", convertToEnglishDigits(formData.phone));
 
     startTransition(async () => {
+      if (!session.data?.user.id) return;
       let res;
       if (editingStaff) {
         // ویرایش
-        res = await updateStaffAction(form, editingStaff.id);
+        res = await updateStaffAction(
+          form,
+          editingStaff.id,
+          session.data?.user.id,
+        );
       } else {
         // ایجاد
-        res = await createStaffAction(form, businessId);
+        res = await createStaffAction(form, businessId, session.data?.user.id);
       }
 
       if (res.success) {
@@ -135,7 +143,8 @@ const StaffPage = ({ businessId, initialStaff }: StaffPageProps) => {
       (value) => {
         if (!value) return;
         startTransition(async () => {
-          const res = await deleteStaffAction(id);
+          if (!session.data?.user.id) return;
+          const res = await deleteStaffAction(id, session.data?.user.id);
           if (res.success) {
             toast.success(res.message);
             setStaffList((prev) => prev.filter((s) => s.id !== id));

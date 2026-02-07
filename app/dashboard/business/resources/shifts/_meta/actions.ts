@@ -2,8 +2,10 @@
 
 import prisma from "@/utils/prisma";
 import { revalidatePath } from "next/cache";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/utils/authOptions";
+import { BusinessRole } from "@/constants/enums";
 
-// دریافت لیست پرسنل برای دراپ‌داون
 export async function getStaffAction(businessId: string) {
   try {
     const staff = await prisma.staffMember.findMany({
@@ -13,12 +15,11 @@ export async function getStaffAction(businessId: string) {
     });
     return { success: true, data: staff };
   } catch (error) {
-    console.error(error);
+    console.error("Get Staff Error:", error);
     return { success: false, error: "خطا در دریافت لیست پرسنل" };
   }
 }
 
-// دریافت شیفت‌های یک پرسنل خاص
 export async function getStaffScheduleAction(staffId: string) {
   try {
     const schedules = await prisma.staffAvailability.findMany({
@@ -27,16 +28,18 @@ export async function getStaffScheduleAction(staffId: string) {
     });
     return { success: true, data: schedules };
   } catch (error) {
-    console.error(error);
+    console.error("Get Staff Schedule Error:", error);
     return { success: false, error: "خطا در دریافت شیفت‌ها" };
   }
 }
 
-// ایجاد یا ویرایش شیفت‌ها (Upsert)
-// ما آرایه‌ای از شیفت‌ها را می‌گیریم و در یک تراکنش ذخیره می‌کنیم
 export async function upsertScheduleAction(staffId: string, schedules: any[]) {
   try {
-    // اعتبارسنجی ساده: پایان زمان باید بعد از شروع باشد
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return { success: false, error: "دسترسی غیرمجاز" };
+    }
+
     for (const sch of schedules) {
       if (!sch.isClosed && sch.startTime >= sch.endTime) {
         return {
@@ -46,15 +49,11 @@ export async function upsertScheduleAction(staffId: string, schedules: any[]) {
       }
     }
 
-    // استفاده از تراکنش برای اطمینان از یکپارچگی داده‌ها
-    await prisma.$transaction(
+    const updatedSchedules = await prisma.$transaction(
       schedules.map((schedule) =>
         prisma.staffAvailability.upsert({
           where: {
-            staffId_dayOfWeek: {
-              staffId,
-              dayOfWeek: schedule.dayOfWeek,
-            },
+            staffId_dayOfWeek: { staffId, dayOfWeek: schedule.dayOfWeek },
           },
           update: {
             startTime: schedule.startTime,
@@ -72,10 +71,26 @@ export async function upsertScheduleAction(staffId: string, schedules: any[]) {
       ),
     );
 
-    // بروزرسانی کش برای نمایش تغییرات فوری
+    await prisma.auditLog.create({
+      data: {
+        action: "STAFF_SCHEDULE_UPSERT",
+        entityType: "STAFF",
+        entityId: staffId,
+        businessId: session.user.business?.id ?? "",
+        performedBy: session.user.id,
+        actorRole: session.user.business?.businessRole ?? BusinessRole.OWNER,
+        metadata: { schedules },
+      },
+    });
+
+    // ری‌والید مسیر
     revalidatePath("/dashboard/business/settings/shifts");
 
-    return { success: true, message: "شیفت‌ها با موفقیت ذخیره شدند" };
+    return {
+      success: true,
+      message: "شیفت‌ها با موفقیت ذخیره شدند",
+      data: updatedSchedules,
+    };
   } catch (error) {
     console.error("Upsert Schedule Error:", error);
     return { success: false, error: "خطا در ذخیره سازی" };

@@ -24,9 +24,7 @@ const updateSchema = z.object({
         message: "شماره موبایل باید ۱۱ رقم و با ۰۹ شروع شود",
       }),
     ),
-
   fullName: z.string().trim().min(2, "نام معتبر نیست").nullable().optional(),
-
   email: z
     .string()
     .trim()
@@ -35,7 +33,6 @@ const updateSchema = z.object({
     .refine((email) => email === null || validateEmail(email, false).valid, {
       message: "فرمت ایمیل صحیح نیست",
     }),
-
   username: z
     .string()
     .trim()
@@ -46,76 +43,58 @@ const updateSchema = z.object({
 
 export async function updateStaffProfileAction(data: IData) {
   const session = await getServerSession(authOptions);
-
-  if (!session?.user?.id) {
-    return {
-      success: false,
-      message: "دسترسی غیرمجاز، لطفاً دوباره وارد شوید",
-    };
-  }
+  if (!session?.user?.id) return { success: false, message: "دسترسی غیرمجاز" };
 
   const userId = session.user.id;
-
-  // 1️⃣ Validation
   const parsed = updateSchema.safeParse(data);
-  if (!parsed.success) {
+  if (!parsed.success)
     return {
       success: false,
-      message:
-        JSON.parse(parsed.error?.message) ?? "اطلاعات وارد شده نامعتبر است",
+      message: parsed.error?.message ?? "اطلاعات نامعتبر است",
     };
-  }
 
   const { phone, email, fullName, username } = parsed.data;
 
   try {
-    // 2️⃣ بررسی یکتایی موبایل
     const phoneExists = await prisma.user.findFirst({
-      where: {
-        phone,
-        id: { not: userId },
-      },
-      select: { id: true },
+      where: { phone, id: { not: userId } },
     });
+    if (phoneExists)
+      return { success: false, message: "این شماره موبایل قبلاً ثبت شده است" };
 
-    if (phoneExists) {
-      return {
-        success: false,
-        message: "این شماره موبایل قبلاً ثبت شده است",
-      };
-    }
-
-    // 3️⃣ بررسی یکتایی username
     if (username) {
       const usernameExists = await prisma.user.findFirst({
-        where: {
-          username,
-          id: { not: userId },
-        },
-        select: { id: true },
+        where: { username, id: { not: userId } },
       });
-
-      if (usernameExists) {
-        return {
-          success: false,
-          message: "نام کاربری قبلاً استفاده شده است",
-        };
-      }
+      if (usernameExists)
+        return { success: false, message: "نام کاربری قبلاً استفاده شده است" };
     }
 
-    // 4️⃣ آماده‌سازی دیتا
-    const updateData: Record<string, any> = {
-      phone,
-    };
-
+    const updateData: Record<string, any> = { phone };
     if (email !== undefined) updateData.email = email || null;
     if (username !== undefined) updateData.username = username || null;
     if (fullName !== undefined) updateData.fullName = fullName || null;
 
-    // 5️⃣ آپدیت
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
+    const updatedUser = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: updateData,
+      });
+
+      // Audit Log
+      await tx.auditLog.create({
+        data: {
+          action: "STAFF_PROFILE_UPDATED",
+          entityType: "USER",
+          entityId: userId,
+          businessId: session.user.business?.id ?? null,
+          performedBy: userId,
+          actorRole: "STAFF",
+          metadata: updateData,
+        },
+      });
+
+      return user;
     });
 
     revalidatePath("/dashboard/staff/settings");
@@ -127,7 +106,6 @@ export async function updateStaffProfileAction(data: IData) {
     };
   } catch (error) {
     console.error("updateStaffProfileAction error:", error);
-
     return {
       success: false,
       message: "خطای غیرمنتظره‌ای رخ داد، لطفاً دوباره تلاش کنید",
@@ -138,26 +116,17 @@ export async function updateStaffProfileAction(data: IData) {
 export async function getStaffAvailability() {
   try {
     const session = await getServerSession(authOptions);
-
     const userId = session?.user.id;
 
-    const staff = await prisma.staffMember.findFirst({
-      where: {
-        userId,
-      },
-    });
-
+    const staff = await prisma.staffMember.findFirst({ where: { userId } });
     const staffId = staff?.id;
-    const staffAvailability = await prisma.staffAvailability.findMany({
-      where: {
-        staffId,
-      },
-    });
 
+    const staffAvailability = await prisma.staffAvailability.findMany({
+      where: { staffId },
+    });
     return { success: true, staffAvailability };
   } catch (error) {
-    console.error("get staff availability error:", error);
-
+    console.error("getStaffAvailability error:", error);
     return {
       success: false,
       message: "خطای غیرمنتظره‌ای رخ داد، لطفاً دوباره تلاش کنید",
@@ -165,7 +134,7 @@ export async function getStaffAvailability() {
   }
 }
 
-interface schedule {
+interface Schedule {
   dayOfWeek: number;
   isClosed: boolean;
   startTime: string;
@@ -174,46 +143,36 @@ interface schedule {
 }
 
 export async function upsertStaffScheduleAction(
-  schedules: schedule[],
+  schedules: Schedule[],
   breakMinutes?: number,
 ) {
   try {
     const session = await getServerSession(authOptions);
-
     const userId = session?.user.id;
     const businessId = session?.user.business?.id;
 
-    if (!userId || !businessId) {
+    if (!userId || !businessId)
       return { success: false, message: "دسترسی ندارید" };
-    }
-    const staff = await prisma.staffMember.findFirst({
-      where: { userId },
-    });
 
-    const staffId = staff?.id;
+    const staff = await prisma.staffMember.findFirst({ where: { userId } });
+    if (!staff) return { success: false, message: "همکار پیدا نشد" };
 
-    if (!staffId) {
-      return { success: false, message: "همکار پیدا نشد" };
-    }
+    const staffId = staff.id;
+
     // اعتبارسنجی ساده: پایان زمان باید بعد از شروع باشد
     for (const sch of schedules) {
-      if (!sch.isClosed && sch.startTime >= sch.endTime) {
+      if (!sch.isClosed && sch.startTime >= sch.endTime)
         return {
           success: false,
           error: `زمان پایان در ${sch.label} باید بعد از زمان شروع باشد.`,
         };
-      }
     }
 
-    // استفاده از تراکنش برای اطمینان از یکپارچگی داده‌ها
-    await prisma.$transaction(
-      schedules.map((schedule) =>
-        prisma.staffAvailability.upsert({
+    await prisma.$transaction(async (tx) => {
+      for (const schedule of schedules) {
+        await tx.staffAvailability.upsert({
           where: {
-            staffId_dayOfWeek: {
-              staffId,
-              dayOfWeek: schedule.dayOfWeek,
-            },
+            staffId_dayOfWeek: { staffId, dayOfWeek: schedule.dayOfWeek },
           },
           update: {
             startTime: schedule.startTime,
@@ -227,25 +186,33 @@ export async function upsertStaffScheduleAction(
             endTime: schedule.endTime,
             isClosed: schedule.isClosed,
           },
-        }),
-      ),
-    );
+        });
+      }
 
-    await prisma.staffMember.update({
-      where: {
-        businessId_userId: {
-          userId,
+      await tx.staffMember.update({
+        where: { businessId_userId: { userId, businessId } },
+        data: { breakMinutes },
+      });
+
+      // Audit Log → serialize کردن JSON
+      await tx.auditLog.create({
+        data: {
+          action: "STAFF_SCHEDULE_UPDATED",
+          entityType: "STAFF_AVAILABILITY",
+          entityId: staffId,
           businessId,
+          performedBy: userId,
+          actorRole: "STAFF",
+          metadata: JSON.parse(JSON.stringify({ schedules, breakMinutes })),
         },
-      },
-      data: {
-        breakMinutes,
-      },
+      });
     });
+
+    revalidatePath("/dashboard/staff/settings");
 
     return { success: true, message: "شیفت‌ها با موفقیت ذخیره شدند" };
   } catch (error) {
-    console.error("Upsert Schedule Error:", error);
+    console.error("upsertStaffScheduleAction error:", error);
     return { success: false, error: "خطا در ذخیره سازی" };
   }
 }

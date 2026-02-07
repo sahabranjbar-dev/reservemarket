@@ -2,6 +2,8 @@
 
 import { Role } from "@/constants/enums";
 import prisma from "@/utils/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/utils/authOptions";
 
 // تعریف تایپ خروجی استاندارد برای اکشن‌ها
 type ActionResponse = {
@@ -10,17 +12,15 @@ type ActionResponse = {
   user?: any; // می‌توانید تایپ دقیق User را از پرایسما ایمپورت کنید
 };
 
+// -----------------------------
+// 1️⃣ دریافت جزئیات کاربر
+// -----------------------------
 export async function getUserDetails(id: string): Promise<ActionResponse> {
   try {
     const user = await prisma.user.findUnique({
       where: { id },
       include: {
-        roles: {
-          select: {
-            id: true,
-            role: true,
-          },
-        },
+        roles: { select: { id: true, role: true } },
         businessMembers: {
           include: {
             business: {
@@ -42,46 +42,27 @@ export async function getUserDetails(id: string): Promise<ActionResponse> {
           },
         },
         bookings: {
-          orderBy: {
-            startTime: "desc",
-          },
-          take: 20, // محدود کردن تعداد نوبت‌ها برای بهینه‌سازی
+          orderBy: { startTime: "desc" },
+          take: 20,
           select: {
             id: true,
             startTime: true,
             status: true,
-            service: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            business: {
-              select: {
-                id: true,
-                businessName: true,
-              },
-            },
+            service: { select: { id: true, name: true } },
+            business: { select: { id: true, businessName: true } },
           },
         },
         favorites: {
           select: {
             id: true,
-            business: {
-              select: {
-                id: true,
-                businessName: true,
-              },
-            },
+            business: { select: { id: true, businessName: true } },
           },
         },
       },
     });
 
-    if (!user) {
+    if (!user)
       return { success: false, message: "کاربر با این شناسه یافت نشد." };
-    }
-
     return { success: true, user };
   } catch (error) {
     console.error("Error fetching user details:", error);
@@ -89,33 +70,48 @@ export async function getUserDetails(id: string): Promise<ActionResponse> {
   }
 }
 
+// -----------------------------
+// 2️⃣ فعال/غیرفعال کردن کاربر
+// -----------------------------
 export async function toggleUserStatus(id: string): Promise<ActionResponse> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return { success: false, message: "دسترسی غیرمجاز" };
+
   try {
-    // ابتدا چک می‌کنیم کاربر وجود دارد
     const user = await prisma.user.findUnique({ where: { id } });
-
-    if (!user) {
-      return { success: false, message: "کاربر یافت نشد." };
-    }
-
-    // اگر کاربر حذف شده باشد، نباید بتوان استاتوسش را تغییر داد
-    if (user.deletedAt) {
+    if (!user) return { success: false, message: "کاربر یافت نشد." };
+    if (user.deletedAt)
       return {
         success: false,
         message: "وضعیت کاربر حذف شده قابل تغییر نیست.",
       };
-    }
 
-    await prisma.user.update({
-      where: { id },
-      data: { isActive: !user.isActive },
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id },
+        data: { isActive: !user.isActive },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: "USER_STATUS_TOGGLED",
+          entityType: "USER",
+          entityId: u.id,
+          businessId: session.user.business?.id ?? "",
+          performedBy: session.user.id,
+          actorRole: session.user.business?.businessRole ?? "OWNER",
+          metadata: { previousStatus: user.isActive, newStatus: u.isActive },
+        },
+      });
+
+      return u;
     });
 
     return {
       success: true,
-      message: user.isActive
-        ? "کاربر با موفقیت غیرفعال شد."
-        : "کاربر با موفقیت فعال شد.",
+      message: updated.isActive
+        ? "کاربر با موفقیت فعال شد."
+        : "کاربر با موفقیت غیرفعال شد.",
     };
   } catch (error) {
     console.error("Error toggling user status:", error);
@@ -123,22 +119,32 @@ export async function toggleUserStatus(id: string): Promise<ActionResponse> {
   }
 }
 
+// -----------------------------
+// 3️⃣ حذف کاربر (Soft Delete)
+// -----------------------------
 export async function deleteUser(id: string): Promise<ActionResponse> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return { success: false, message: "دسترسی غیرمجاز" };
+
   try {
     const user = await prisma.user.findUnique({ where: { id } });
-
-    if (!user) {
-      return { success: false, message: "کاربر یافت نشد." };
-    }
-
-    if (user.deletedAt) {
+    if (!user) return { success: false, message: "کاربر یافت نشد." };
+    if (user.deletedAt)
       return { success: false, message: "این کاربر قبلاً حذف شده است." };
-    }
 
-    // Soft Delete: تنظیم تاریخ حذف
-    await prisma.user.update({
-      where: { id },
-      data: { deletedAt: new Date() },
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id }, data: { deletedAt: new Date() } });
+
+      await tx.auditLog.create({
+        data: {
+          action: "USER_DELETED",
+          entityType: "USER",
+          entityId: id,
+          businessId: session.user.business?.id ?? "",
+          performedBy: session.user.id,
+          actorRole: session.user.business?.businessRole ?? "OWNER",
+        },
+      });
     });
 
     return { success: true, message: "کاربر با موفقیت حذف شد." };
@@ -148,24 +154,32 @@ export async function deleteUser(id: string): Promise<ActionResponse> {
   }
 }
 
+// -----------------------------
+// 4️⃣ بازیابی کاربر
+// -----------------------------
 export async function restoreUser(id: string): Promise<ActionResponse> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return { success: false, message: "دسترسی غیرمجاز" };
+
   try {
     const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) return { success: false, message: "کاربر یافت نشد." };
+    if (!user.deletedAt)
+      return { success: false, message: "این کاربر در حال حاضر فعال است." };
 
-    if (!user) {
-      return { success: false, message: "کاربر یافت نشد." };
-    }
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id }, data: { deletedAt: null } });
 
-    if (!user.deletedAt) {
-      return {
-        success: false,
-        message: "این کاربر در حال حاضر فعال است و نیاز به بازیابی ندارد.",
-      };
-    }
-
-    await prisma.user.update({
-      where: { id },
-      data: { deletedAt: null },
+      await tx.auditLog.create({
+        data: {
+          action: "USER_RESTORED",
+          entityType: "USER",
+          entityId: id,
+          businessId: session.user.business?.id ?? "",
+          performedBy: session.user.id,
+          actorRole: session.user.business?.businessRole ?? "OWNER",
+        },
+      });
     });
 
     return { success: true, message: "کاربر با موفقیت بازیابی شد." };
@@ -175,37 +189,43 @@ export async function restoreUser(id: string): Promise<ActionResponse> {
   }
 }
 
+// -----------------------------
+// 5️⃣ افزودن نقش به کاربر
+// -----------------------------
 export async function addUserRole(
   userId: string,
   role: Role,
 ): Promise<ActionResponse> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return { success: false, message: "دسترسی غیرمجاز" };
+
   try {
-    // چک می‌کنیم آیا کاربر وجود دارد
     const userExists = await prisma.user.findUnique({ where: { id: userId } });
     if (!userExists) return { success: false, message: "کاربر یافت نشد." };
 
-    // چک می‌کنیم آیا این نقش قبلاً داده شده است (در سطح دیتابیس یونیک هست ولی اینجا برای پیام بهتر هندل می‌کنیم)
     const existingRole = await prisma.userRole.findUnique({
-      where: {
-        userId_role: {
-          userId,
-          role,
-        },
-      },
+      where: { userId_role: { userId, role } },
     });
-
-    if (existingRole) {
+    if (existingRole)
       return {
         success: false,
         message: "این نقش قبلاً برای کاربر ثبت شده است.",
       };
-    }
 
-    await prisma.userRole.create({
-      data: {
-        userId,
-        role,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.userRole.create({ data: { userId, role } });
+
+      await tx.auditLog.create({
+        data: {
+          action: "USER_ROLE_ADDED",
+          entityType: "USER",
+          entityId: userId,
+          businessId: session.user.business?.id ?? "",
+          performedBy: session.user.id,
+          actorRole: session.user.business?.businessRole ?? "OWNER",
+          metadata: { role },
+        },
+      });
     });
 
     return { success: true, message: "نقش با موفقیت اضافه شد." };
@@ -215,16 +235,31 @@ export async function addUserRole(
   }
 }
 
+// -----------------------------
+// 6️⃣ حذف نقش از کاربر
+// -----------------------------
 export async function removeUserRole(
   userId: string,
   roleId: string,
 ): Promise<ActionResponse> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return { success: false, message: "دسترسی غیرمجاز" };
+
   try {
-    // حذف بر اساس شناسه خود جدول UserRole (نه User ID)
-    await prisma.userRole.delete({
-      where: {
-        id: roleId,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.userRole.delete({ where: { id: roleId } });
+
+      await tx.auditLog.create({
+        data: {
+          action: "USER_ROLE_REMOVED",
+          entityType: "USER",
+          entityId: userId,
+          businessId: session.user.business?.id ?? "",
+          performedBy: session.user.id,
+          actorRole: session.user.business?.businessRole ?? "OWNER",
+          metadata: { roleId },
+        },
+      });
     });
 
     return { success: true, message: "نقش با موفقیت حذف شد." };

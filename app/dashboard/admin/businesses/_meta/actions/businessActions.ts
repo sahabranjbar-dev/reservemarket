@@ -1,5 +1,6 @@
 "use server";
 
+import { createAuditLog } from "@/audit/audit.service";
 import {
   BusinessRegistrationStatus,
   BusinessRole,
@@ -25,60 +26,92 @@ export interface BusinessActionResponse {
   error?: string;
 }
 
-/**
- * تایید کردن کسب و کار (می‌تواند وضعیت را از REJECTED یا PENDING به APPROVED تغییر دهد)
- */
 export async function approveBusiness(
   businessId: string,
 ): Promise<BusinessActionResponse> {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.user.roles.includes("SUPER_ADMIN")) {
+    if (!session?.user.roles.includes(Role.SUPER_ADMIN)) {
       return {
         success: false,
         message: "دسترسی ندارید",
-        error: "ادمین میتواند کسب‌‌وکار را تایید کند",
       };
     }
-    // 1. آپدیت در دیتابیس
-    const updatedBusiness = await prisma.business.update({
+
+    const business = await prisma.business.findUnique({
       where: { id: businessId },
-      data: {
-        registrationStatus: BusinessStatus.APPROVED,
-        rejectionReason: null,
-        activatedAt: new Date(),
-      },
       include: { owner: true },
     });
 
-    // 2. ارسال پیامک (شبیه‌سازی)
+    if (!business) {
+      return {
+        success: false,
+        message: "کسب‌وکار یافت نشد",
+      };
+    }
+
+    if (business.registrationStatus === BusinessStatus.APPROVED) {
+      return {
+        success: false,
+        message: "این کسب‌وکار قبلاً تایید شده است",
+      };
+    }
+
+    const updatedBusiness = await prisma.$transaction(async (tx) => {
+      const updated = await tx.business.update({
+        where: { id: businessId },
+        data: {
+          registrationStatus: BusinessStatus.APPROVED,
+          rejectionReason: null,
+          activatedAt: new Date(),
+          isActive: true,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: "BUSINESS_APPROVED",
+          entityType: "BUSINESS",
+          entityId: business.id,
+          businessId: business.id,
+          performedBy: session.user.id,
+          actorRole: Role.SUPER_ADMIN,
+          metadata: {
+            from: business.registrationStatus,
+            to: BusinessStatus.APPROVED,
+          },
+        },
+      });
+
+      return updated;
+    });
+
+    // شبیه‌سازی ارسال پیامک
     console.log(
-      `[SMS] Sending approval SMS to ${updatedBusiness.owner.phone}: "Your business is approved!"`,
+      `[SMS] Sending approval SMS to ${business.owner.phone}: Business approved`,
     );
 
-    // 3. بروزرسانی کش
     revalidatePath("/admin/dashboard/businesses");
 
-    return { success: true, message: "کسب‌وکار تایید شد و پیامک ارسال گردید." };
+    return {
+      success: true,
+      message: "کسب‌وکار با موفقیت تایید شد و کاربر مطلع گردید.",
+    };
   } catch (error) {
     console.error("Error approving business:", error);
     return {
       success: false,
-      message: "خطا در تایید کسب و کار",
-      error: String(error),
+      message: "خطا در تایید کسب‌وکار",
     };
   }
 }
 
-/**
- * رد کردن کسب و کار (می‌تواند وضعیت را از APPROVED یا PENDING به REJECTED تغییر دهد)
- */
 export async function rejectBusiness(businessId: string, reason: string) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.user.roles.includes("SUPER_ADMIN")) {
+    if (!session?.user.roles.includes(Role.SUPER_ADMIN)) {
       return {
         success: false,
         message: "دسترسی ندارید",
@@ -87,6 +120,19 @@ export async function rejectBusiness(businessId: string, reason: string) {
     }
     if (!reason.trim()) {
       return { success: false, message: "دلیل رد کردن الزامی است." };
+    }
+
+    const business = await prisma.business.findUnique({
+      where: { id: businessId },
+      include: { owner: true },
+    });
+
+    if (!business) {
+      return { success: false, message: "کسب‌وکار یافت نشد" };
+    }
+
+    if (business.registrationStatus === BusinessStatus.REJECTED) {
+      return { success: false, message: "این کسب‌وکار قبلاً رد شده است" };
     }
 
     // 1. آپدیت در دیتابیس
@@ -100,6 +146,20 @@ export async function rejectBusiness(businessId: string, reason: string) {
         rejectedAt: new Date(),
       },
       include: { owner: true },
+    });
+
+    await createAuditLog({
+      action: "BUSINESS_REJECTED",
+      entityType: "BUSINESS",
+      entityId: business.id,
+      businessId: business.id,
+      performedBy: session.user.id,
+      actorRole: Role.SUPER_ADMIN,
+      metadata: {
+        from: business.registrationStatus,
+        to: BusinessStatus.REJECTED,
+        reason,
+      },
     });
 
     // 2. ارسال پیامک (شبیه‌سازی)
@@ -124,20 +184,47 @@ export async function rejectBusiness(businessId: string, reason: string) {
     };
   }
 }
-
 export async function toggleBusinessStatus(id: string, isActive: boolean) {
   try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.id) {
+      return { success: false, error: "احراز هویت نشده" };
+    }
+
+    const isSuperAdmin = session.user.roles?.includes(Role.SUPER_ADMIN);
+    if (!isSuperAdmin) {
+      return { success: false, error: "دسترسی غیرمجاز" };
+    }
+
+    // 1️⃣ آپدیت بیزنس
     const updatedBusiness = await prisma.business.update({
       where: { id },
       data: { isActive: !isActive },
     });
+
+    // 2️⃣ AuditLog (بعد از موفقیت)
+    await createAuditLog({
+      action: "BUSINESS_STATUS_CHANGED",
+      entityType: "BUSINESS",
+      entityId: updatedBusiness.id,
+      businessId: updatedBusiness.id,
+      performedBy: session.user.id,
+      actorRole: Role.SUPER_ADMIN,
+      metadata: {
+        from: isActive,
+        to: updatedBusiness.isActive,
+      },
+    });
+
     revalidatePath("/dashboard/admin/businesses");
+
     return {
       success: true,
       message: `کسب‌وکار ${updatedBusiness.isActive ? "فعال" : "غیرفعال"} شد`,
     };
   } catch (error) {
-    console.error(error);
+    console.error("Toggle Business Status Error:", error);
     return { success: false, error: "خطا در تغییر وضعیت" };
   }
 }
@@ -146,7 +233,7 @@ export async function getBusinessDetail(id: string) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.user.roles.includes("SUPER_ADMIN")) {
+    if (!session?.user.roles.includes(Role.SUPER_ADMIN)) {
       return {
         success: false,
         message: "دسترسی ندارید",
@@ -204,7 +291,7 @@ export async function updateBusiness({
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.user.roles.includes("SUPER_ADMIN")) {
+    if (!session?.user.roles.includes(Role.SUPER_ADMIN)) {
       return {
         success: false,
         message: "دسترسی ندارید",
@@ -450,7 +537,7 @@ export async function deleteStaffByAdmin({ staffMemberId }: IDeleteStaffInput) {
       return { success: false, message: "UNAUTHORIZED" };
     }
 
-    const isAdmin = session.user.roles?.some((r) => r === "SUPER_ADMIN");
+    const isAdmin = session.user.roles?.some((r) => r === Role.SUPER_ADMIN);
 
     if (!isAdmin) {
       return { success: false, message: "FORBIDDEN" };
@@ -497,7 +584,7 @@ export async function deleteStaffByAdmin({ staffMemberId }: IDeleteStaffInput) {
       });
 
       const hasImportantRole = staff.user?.roles.some(
-        (r) => r.role === "SUPER_ADMIN",
+        (r) => r.role === Role.SUPER_ADMIN,
       );
 
       if (remainingMemberships === 0 && !hasImportantRole) {

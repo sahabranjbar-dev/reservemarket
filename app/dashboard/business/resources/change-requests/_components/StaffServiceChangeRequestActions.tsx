@@ -1,31 +1,30 @@
 "use client";
 import { Modal } from "@/components";
 import { Button } from "@/components/ui/button";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  MoreVertical,
   AlertCircle,
+  Calendar,
   CheckCircle,
-  XCircle,
+  ClipboardCheck,
   Clock,
   DollarSign,
-  User,
-  Phone,
-  Calendar,
-  Tag,
   FileText,
   Info,
   Loader2,
-  ClipboardCheck,
+  MoreVertical,
+  Phone,
+  User,
+  XCircle,
 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
+import { toast } from "sonner";
 import {
-  getStaffServiceChangeRequestDetails,
   approveStaffServiceChangeRequest,
+  getStaffServiceChangeRequestDetails,
   rejectStaffServiceChangeRequest,
 } from "../_meta/actions";
-import { toast } from "sonner";
-import Link from "next/link";
 
 interface Props {
   id: string;
@@ -50,7 +49,7 @@ const StaffServiceChangeRequestActions = ({ id }: Props) => {
       if (!result.success) {
         throw new Error(result.message);
       }
-      return result.changeRequests;
+      return result.changeRequest;
     },
     enabled: openModal,
     retry: 1,

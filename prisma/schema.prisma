@@ -361,15 +361,26 @@ model ContactMessage {
 
 model AuditLog {
   id          String    @id @default(cuid())
+
   action      String
   entityType  String
   entityId    String
+
+  businessId  String?
+
   performedBy String?
+  actorRole   String?
+
   metadata    Json?
+
+  ip          String?
+  userAgent   String?
+
   createdAt   DateTime  @default(now())
 
   user        User?    @relation(fields: [performedBy], references: [id])
 }
+
 
 enum NotificationType {
   SYSTEM
@@ -438,4 +449,19 @@ model TicketMessage {
   createdAt DateTime  @default(now())
 
   ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+model Log {
+  id        String    @id @default(cuid())
+  level     LogLevel
+  message   String
+  context   Json?
+  createdAt DateTime  @default(now())
 }

@@ -1,5 +1,6 @@
 "use server";
 
+import { createAuditLog } from "@/audit/audit.service";
 import { BookingStatus, BusinessRole } from "@/constants/enums";
 import { authOptions } from "@/utils/authOptions";
 import prisma from "@/utils/prisma";
@@ -238,6 +239,7 @@ export async function updateBookingStatusAction({ bookingId, status }: Params) {
       select: {
         id: true,
         status: true,
+        businessId: true,
       },
     });
 
@@ -261,6 +263,19 @@ export async function updateBookingStatusAction({ bookingId, status }: Params) {
       where: { id: bookingId },
       data: {
         status,
+      },
+    });
+
+    await createAuditLog({
+      action: "BOOKING_STATUS_CHANGED",
+      entityType: "BOOKING",
+      entityId: booking.id,
+      businessId: booking.businessId,
+      performedBy: session.user.id,
+      actorRole: "STAFF",
+      metadata: {
+        from: booking.status,
+        to: status,
       },
     });
 

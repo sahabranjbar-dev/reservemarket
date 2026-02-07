@@ -45,23 +45,23 @@ export async function setupBusinessAction({
         throw new Error("BUSINESS_NOT_FOUND");
       }
 
-      // 2. ایجاد یا دریافت یوزر با نقش CUSTOMER
+      // 2. ایجاد یا دریافت یوزر با نقش USER
       const user = await tx.user.upsert({
         where: { phone: convertToEnglishDigits(staffPhone) },
         update: {},
         create: {
           phone: convertToEnglishDigits(staffPhone),
+          fullName: staffName,
           roles: {
             create: { role: "CUSTOMER" },
           },
-          fullName: staffName,
         },
         include: { roles: true },
       });
 
-      const hasCustomerRole = user.roles.some((r) => r.role === "CUSTOMER");
-
-      if (!hasCustomerRole) {
+      // اطمینان از داشتن نقش USER
+      const hasUserRole = user.roles.some((r) => r.role === "CUSTOMER");
+      if (!hasUserRole) {
         await tx.userRole.create({
           data: {
             userId: user.id,
@@ -70,7 +70,19 @@ export async function setupBusinessAction({
         });
       }
 
-      // 3. ایجاد پرسنل و اتصال به یوزر
+      // 3. بررسی staff تکراری
+      const existingStaff = await tx.staffMember.findFirst({
+        where: {
+          businessId: business.id,
+          phone: convertToEnglishDigits(staffPhone),
+        },
+      });
+
+      if (existingStaff) {
+        throw new Error("STAFF_ALREADY_EXISTS");
+      }
+
+      // 4. ایجاد پرسنل و اتصال به یوزر
       const staff = await tx.staffMember.create({
         data: {
           name: staffName,
@@ -80,15 +92,23 @@ export async function setupBusinessAction({
         },
       });
 
-      await tx.businessMember.create({
-        data: {
+      // 5. اتصال یوزر به بیزنس با نقش STAFF
+      await tx.businessMember.upsert({
+        where: {
+          userId_businessId: {
+            userId: user.id,
+            businessId: business.id,
+          },
+        },
+        update: {},
+        create: {
           userId: user.id,
-          businessId: businessId,
+          businessId: business.id,
           role: BusinessRole.STAFF,
         },
       });
 
-      // 4. ایجاد سرویس
+      // 6. ایجاد سرویس
       const service = await tx.service.create({
         data: {
           name: serviceName,
@@ -98,7 +118,25 @@ export async function setupBusinessAction({
         },
       });
 
-      // 5. اتصال سرویس به پرسنل
+      // 7. لاگ ایجاد سرویس داخل transaction
+      await tx.auditLog.create({
+        data: {
+          action: "BUSINESS_SETUP_SERVICE_CREATED",
+          entityType: "SERVICE",
+          entityId: service.id,
+          businessId: business.id,
+          performedBy: session.user.id,
+          actorRole: BusinessRole.OWNER,
+          metadata: {
+            serviceName,
+            price,
+            duration,
+            staffName,
+          },
+        },
+      });
+
+      // 8. اتصال سرویس به پرسنل
       await tx.serviceStaff.create({
         data: {
           serviceId: service.id,
@@ -106,7 +144,7 @@ export async function setupBusinessAction({
         },
       });
 
-      // 6. ایجاد برنامه کاری پیش‌فرض (۷ روز، ۹ تا ۱۷)
+      // 9. ایجاد برنامه کاری پیش‌فرض (۷ روز، ۹ تا ۱۷)
       const availabilities = Array.from({ length: 7 }).map((_, dayOfWeek) => ({
         staffId: staff.id,
         dayOfWeek,
@@ -120,21 +158,24 @@ export async function setupBusinessAction({
       });
     });
 
+    // 10. بروزرسانی کش
     revalidatePath("/dashboard/business");
+
     return { success: true };
   } catch (error: any) {
     console.error("SETUP_BUSINESS_ERROR:", error);
 
     if (error.message === "BUSINESS_NOT_FOUND") {
+      return { success: false, error: "کسب‌وکار معتبر نیست" };
+    }
+
+    if (error.message === "STAFF_ALREADY_EXISTS") {
       return {
         success: false,
-        error: "کسب‌وکار معتبر نیست",
+        error: "این پرسنل قبلاً در کسب‌وکار ثبت شده است",
       };
     }
 
-    return {
-      success: false,
-      error: "خطا در راه‌اندازی اولیه کسب‌وکار",
-    };
+    return { success: false, error: "خطا در راه‌اندازی اولیه کسب‌وکار" };
   }
 }

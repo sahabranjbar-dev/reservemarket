@@ -1,12 +1,16 @@
 "use server";
+
 import { authOptions } from "@/utils/authOptions";
 import { convertToEnglishDigits, validateEmail } from "@/utils/common";
 import prisma from "@/utils/prisma";
 import bcrypt from "bcryptjs";
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
-import z from "zod";
+import { z } from "zod";
 
+// -----------------------------
+// 1️⃣ اعتبارسنجی کد OTP
+// -----------------------------
 export async function otCodeValidate({
   code,
   phone,
@@ -15,6 +19,8 @@ export async function otCodeValidate({
   code: string;
 }) {
   try {
+    const session = await getServerSession(authOptions);
+
     const resolvedPhone = convertToEnglishDigits(phone);
     const resolvedCode = convertToEnglishDigits(code);
 
@@ -26,20 +32,33 @@ export async function otCodeValidate({
       return { success: false, message: "کد منقضی شده است" };
 
     const isValid = await bcrypt.compare(resolvedCode, otp.codeHash);
-
     if (!isValid) return { success: false, message: "کد اشتباه است" };
 
-    await prisma.otpCode.delete({
-      where: { phone: resolvedPhone },
+    await prisma.otpCode.delete({ where: { phone: resolvedPhone } });
+
+    // Audit Log
+    await prisma.auditLog.create({
+      data: {
+        action: "OTP_VERIFIED",
+        entityType: "USER",
+        entityId: otp.phone ?? null,
+        businessId: null,
+        performedBy: session?.user.id,
+        actorRole: "CUSTOMER",
+        metadata: { phone: resolvedPhone },
+      },
     });
 
     return { success: true, message: "کد تایید شد", phone: resolvedPhone };
   } catch (error) {
-    console.error(error);
+    console.error("otCodeValidate error:", error);
     return { success: false, message: "خطای سرور" };
   }
 }
 
+// -----------------------------
+// 2️⃣ ویرایش پروفایل مشتری
+// -----------------------------
 interface IData {
   phone: string;
   email?: string | null;
@@ -68,38 +87,28 @@ const updateSchema = z.object({
     .refine((email) => email === null || validateEmail(email, false).valid, {
       message: "فرمت ایمیل صحیح نیست",
     }),
-
   username: z.string().nullable().optional(),
 });
 
 export async function updateCustomerProfile(data: IData) {
   try {
     const session = await getServerSession(authOptions);
-
-    if (!session?.user?.id) {
-      return { success: false, message: "Unauthorized" };
-    }
+    if (!session?.user?.id) return { success: false, message: "Unauthorized" };
 
     const userId = session.user.id;
-
     const parsed = updateSchema.safeParse(data);
-    if (!parsed.success) {
+    if (!parsed.success)
       return { success: false, message: parsed.error.message };
-    }
 
     const { phone, email, fullName, username } = parsed.data;
 
+    // بررسی تکراری بودن نام کاربری
     if (username) {
       const isExistUserName = await prisma.user.findFirst({
-        where: {
-          username,
-          id: { not: userId },
-        },
+        where: { username, id: { not: userId } },
       });
-
-      if (isExistUserName) {
+      if (isExistUserName)
         return { success: false, message: "نام کاربری تکراری است" };
-      }
     }
 
     const updateData: any = {};
@@ -108,9 +117,26 @@ export async function updateCustomerProfile(data: IData) {
     if (username !== undefined) updateData.username = username;
     if (fullName !== undefined) updateData.fullName = fullName;
 
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
+    const updatedUser = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: updateData,
+      });
+
+      // Audit Log
+      await tx.auditLog.create({
+        data: {
+          action: "CUSTOMER_PROFILE_UPDATED",
+          entityType: "USER",
+          entityId: userId,
+          businessId: null,
+          performedBy: userId,
+          actorRole: "CUSTOMER",
+          metadata: updateData,
+        },
+      });
+
+      return user;
     });
 
     revalidatePath("/dashboard/customer/settings");
@@ -121,7 +147,7 @@ export async function updateCustomerProfile(data: IData) {
       updatedUser,
     };
   } catch (error) {
-    console.error(error);
+    console.error("updateCustomerProfile error:", error);
     return { success: false, message: "خطای سرور" };
   }
 }
