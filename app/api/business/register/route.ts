@@ -1,4 +1,5 @@
-import { BusinessType } from "@/constants/enums";
+import { BusinessType, NotificationType } from "@/constants/enums";
+import { notificationQueue } from "@/queues/notification.queue";
 import { convertToEnglishDigits, getSlug } from "@/utils/common";
 import { ServerError } from "@/utils/errors";
 import prisma from "@/utils/prisma";
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json(
         { error: true, errors: JSON.parse(parsed.error.message) },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
     if (existUserName) {
       return NextResponse.json(
         { success: false, message: "نام کاربری تکراری است" },
-        { status: 409 }
+        { status: 409 },
       );
     }
 
@@ -176,6 +177,26 @@ export async function POST(request: NextRequest) {
       return newBusiness;
     });
 
+    const admins = await prisma.user.findMany({
+      where: {
+        roles: {
+          every: {
+            role: "SUPER_ADMIN",
+          },
+        },
+      },
+    });
+
+    await notificationQueue.add("CREATE_NOTIFICATION", {
+      notifications: admins.map((item) => ({
+        userId: item.id,
+        title: "کسب‌وکار جدید ثبت شد",
+        body: `${business.ownerName} کسب‌وکار جدید با نام ${business.businessName} را ثبت کرد`,
+        sendSMS: true,
+      })),
+      type: NotificationType.SYSTEM,
+    });
+
     return NextResponse.json(
       {
         success: true,
@@ -185,7 +206,7 @@ export async function POST(request: NextRequest) {
         },
         message: `کسب‌وکار ${business.businessName} با موفقیت ایجاد شد و منتظر تایید مدیریت است.`,
       },
-      { status: 201 }
+      { status: 201 },
     );
   } catch (error) {
     console.error("[CREATE_BUSINESS_ERROR]", error);
@@ -198,7 +219,7 @@ export async function POST(request: NextRequest) {
     ) {
       return NextResponse.json(
         { success: false, message: "نام کاربری انتخاب شده در سیستم وجود دارد" },
-        { status: 409 }
+        { status: 409 },
       );
     }
 

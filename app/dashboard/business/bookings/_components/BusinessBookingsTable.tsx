@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import ListContainer from "@/container/ListContainer/ListContainer";
 import ListDataProvider from "@/container/ListDataProvider/ListDataProvider";
 import { ITableColumns } from "@/types/Table";
-import { getHour } from "@/utils/common";
+import { getFullDateTime, getHour } from "@/utils/common";
 import { Calendar, Clock, Phone } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -14,7 +14,7 @@ import BookingListMoreButton from "./BookingListMoreButton";
 import BusinessBookingsFilters from "./BusinessBookingsFilters";
 
 interface Props {
-  data?: {
+  data: {
     page: number;
     pageSize: number;
     resultList: any[];
@@ -33,10 +33,11 @@ const BusinessBookingsTable = ({ data }: Props) => {
 
     params.delete("page");
 
-    params.append("page", String(page + 1));
+    params.append("page", String(page));
 
     replace(`/dashboard/business/bookings/list?${params}`);
   };
+
   const columns: ITableColumns[] = [
     {
       field: "rowNumber",
@@ -48,7 +49,7 @@ const BusinessBookingsTable = ({ data }: Props) => {
       render: (customer) => {
         return (
           <div key={customer?.id}>
-            <span>{customer.name ?? "---"}</span>
+            <span>{customer.fullName ?? "---"}</span>
           </div>
         );
       },
@@ -99,9 +100,10 @@ const BusinessBookingsTable = ({ data }: Props) => {
       title: "ساعت",
       field: "startTime",
 
-      render: (startTime, row) => {
-        const start = getHour(new Date(startTime));
-        const end = getHour(new Date(row.endTime));
+      render: (startTime: Date, row) => {
+        const start = getHour(startTime);
+        const end = getHour(row.endTime);
+
         return (
           <div key={row?.id} className="flex justify-center items-center gap-1">
             <Clock className="w-3 h-3" />
@@ -131,7 +133,7 @@ const BusinessBookingsTable = ({ data }: Props) => {
       <ListDataProvider>
         <CustomTable columns={columns} />
         <PaginationWrapper
-          currentPage={1}
+          currentPage={data?.page}
           loading={false}
           onPageChange={onPageChange}
           totalCount={data?.totalItems}

@@ -7,7 +7,6 @@ import {
   HomeIcon,
   LayoutDashboard,
   MessageCircleMore,
-  Menu,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -26,7 +25,7 @@ const menuItems = [
   { title: "خانه", href: "/", icon: <HomeIcon size={18} /> },
   {
     title: "داشبورد",
-    href: "/dashboard",
+    href: "/auth/choose-dashboard",
     icon: <LayoutDashboard size={18} />,
     target: "_blank",
   },
@@ -45,7 +44,7 @@ const Header = () => {
   if (hiddenRoutes.some((r) => pathname.startsWith(r))) return null;
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-slate-200/60 bg-white/70 backdrop-blur-xl supports-[backdrop-filter]:bg-white/60">
+    <header className="sticky top-0 z-50 w-full border-b border-slate-200/60 bg-white/70 backdrop-blur-xl supports-backdrop-filter:bg-white/60">
       <nav className="container mx-auto px-4 lg:px-8">
         <div className="flex h-20 items-center justify-between">
           {/* Logo Section */}
@@ -53,7 +52,7 @@ const Header = () => {
             href="/"
             className="group flex items-center gap-3 transition-opacity active:opacity-80"
           >
-            <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-200 transition-transform duration-300 group-hover:scale-105">
+            <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-linear-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-200 transition-transform duration-300 group-hover:scale-105">
               <Image
                 src={"/images/logo.png"}
                 alt="logo"
@@ -118,9 +117,9 @@ const Header = () => {
 
             {/* Mobile Menu Button */}
             <div className="md:hidden">
-              <button className="flex h-10 w-10 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors">
                 <HeaderMenu />
-              </button>
+              </div>
             </div>
           </div>
         </div>

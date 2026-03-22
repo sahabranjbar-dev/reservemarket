@@ -235,5 +235,7 @@ export function formatDate(date: Date): string {
 }
 
 export const getHour = (date: Date) => {
-  return new Date(date).toUTCString().split(" ")[4].slice(0, 5);
+  const hour = date.getHours().toString().padStart(2, "0");
+  const minute = date.getMinutes().toString().padStart(2, "0");
+  return `${hour}:${minute}`;
 };

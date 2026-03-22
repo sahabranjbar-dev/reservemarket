@@ -156,7 +156,8 @@ const BusinessLoginPage = () => {
         </div>
 
         <p className="mt-12 text-center text-xs text-slate-400 border-t border-slate-100 pt-6">
-          تمامی حقوق برای پلتفرم رزرو مارکت محفوظ است &copy; ۱۴۰۳
+          تمامی حقوق برای پلتفرم رزرو مارکت محفوظ است &copy;{" "}
+          {new Intl.DateTimeFormat("fa", { year: "numeric" }).format()}
         </p>
       </div>
 

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "postinstall": "prisma generate",
-    "build": "prisma migrate deploy && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
@@ -57,6 +57,7 @@
     "ioredis": "^5.9.2",
     "iran-city": "^1.2.2",
     "jalaali-js": "^1.2.8",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.554.0",
     "motion": "^12.23.12",
     "nanoid": "^5.1.6",
@@ -84,6 +85,7 @@
     "@faker-js/faker": "^10.1.0",
     "@tailwindcss/postcss": "^4",
     "@types/jalaali-js": "^1.2.0",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

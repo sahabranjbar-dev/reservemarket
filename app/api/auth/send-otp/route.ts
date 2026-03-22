@@ -1,8 +1,8 @@
-import api from "@/lib/axios";
 import { createLog } from "@/log/log.service";
 import { convertToEnglishDigits, mobileValidation } from "@/utils/common";
 import { ServerError } from "@/utils/errors";
 import prisma from "@/utils/prisma";
+import { sendSMS } from "@/utils/sms";
 import bcrypt from "bcryptjs";
 import { randomInt } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
@@ -18,34 +18,6 @@ async function cleanupExpiredOtps() {
 
 function generateOtp(): string {
   return randomInt(100_000, 999_999).toString();
-}
-
-async function sendSms(phone: string, code: string) {
-  try {
-    const url = process.env.SMS_URL!;
-    const data = {
-      mobile: phone,
-      templateId: process.env.SMS_TEMPLATE_ID,
-      parameters: [{ name: "Code", value: code }],
-    };
-    const response = await api.post(url, data, {
-      headers: {
-        "X-API-KEY": process.env.SMS_API_KEY,
-        "Content-Type": "application/json",
-        Accept: "text/plain",
-      },
-    });
-
-    const result = response.data;
-    if (result?.status !== 1) {
-      console.error("SMS Error:", result?.message);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.error("SMS Exception:", err);
-    return false;
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -129,8 +101,12 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const templateId = process.env.SMS_OTP_TEMPLATE_ID!;
+
     // 6. ارسال پیامک
-    // const smsSent = await sendSms(phone, code);
+    // const smsSent = await sendSMS(phone, templateId, [
+    //   { name: "Code", value: code },
+    // ]);
     // if (!smsSent) {
     //   await createLog({
     //     level: "ERROR",
@@ -139,7 +115,7 @@ export async function POST(request: NextRequest) {
     //   });
     //   return NextResponse.json(
     //     { error: "ارسال پیامک با خطا مواجه شد." },
-    //     { status: 500 }
+    //     { status: 500 },
     //   );
     // }
 

@@ -111,6 +111,7 @@ export async function createBookingAction(params: {
       include: {
         staff: true,
         business: true,
+        customer: true,
       },
     });
 
@@ -139,35 +140,48 @@ export async function createBookingAction(params: {
       select: { id: true },
     });
 
-    // همه Staff های مرتبط با سرویس (در این مثال فقط یک نفر)
+    // فقط staff مربوط به این رزرو
     const staffMembers = await prisma.staffMember.findMany({
       where: { id: staffId },
-      select: { id: true, userId: true },
+      select: { userId: true },
     });
 
+    // 6️⃣ ساخت payload نوتیفیکیشن‌ها
     const notifications = [
-      // Customer
+      // 👤 Customer
       {
         userId: session.user.id,
         title: "رزرو شما ثبت شد",
         body: `رزرو شما برای سرویس ${service.name} با موفقیت ثبت شد.`,
         sendSMS: true,
+        sms: {
+          mobile: booking.customer.phone, // یا از session
+          templateId: "BOOKING_CREATED_CUSTOMER",
+          parameters: {
+            service: service.name,
+            date,
+            time,
+          },
+        },
       },
-      // Owner
+
+      // 🧑‍💼 Owner
       {
         userId: booking.business.ownerId,
         title: "رزرو جدید در کسب‌وکار شما",
         body: `یک رزرو جدید برای سرویس ${service.name} توسط مشتری ثبت شد.`,
         sendSMS: false,
       },
-      // Staff
+
+      // 👥 Staff
       ...staffMembers.map((s) => ({
-        userId: s.userId,
+        userId: s.userId!,
         title: "رزرو جدید",
         body: `رزروی جدید برای سرویس ${service.name} ثبت شد.`,
         sendSMS: false,
       })),
-      // Admins
+
+      // 🛡 Admin
       ...admins.map((a) => ({
         userId: a.id,
         title: "رزرو جدید در سیستم",
@@ -176,15 +190,15 @@ export async function createBookingAction(params: {
       })),
     ];
 
-    // 6️⃣ یکتا کردن Notification ها بر اساس userId
+    // 7️⃣ حذف نوتیفیکیشن‌های تکراری (خیلی مهم)
     const uniqueNotifications = notifications.filter(
       (v, i, a) => a.findIndex((t) => t.userId === v.userId) === i,
     );
 
-    // 7️⃣ اضافه کردن به Queue
+    // 8️⃣ ارسال به Queue
     await notificationQueue.add("CREATE_NOTIFICATION", {
-      notifications: uniqueNotifications,
       type: NotificationType.BOOKING,
+      notifications: uniqueNotifications,
     });
 
     return {

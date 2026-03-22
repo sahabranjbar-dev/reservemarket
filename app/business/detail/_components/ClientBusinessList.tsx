@@ -152,7 +152,7 @@ const ClientBusinessList = ({
                 "flex items-center gap-2 px-6 py-3 rounded-2xl border-2 transition-all font-bold text-sm whitespace-nowrap",
                 currentParams.category === "all"
                   ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-200"
-                  : "bg-white text-slate-600 border-transparent hover:border-slate-200 hover:bg-slate-50"
+                  : "bg-white text-slate-600 border-transparent hover:border-slate-200 hover:bg-slate-50",
               )}
             >
               همه
@@ -172,7 +172,7 @@ const ClientBusinessList = ({
                     "flex items-center gap-2 px-6 py-3 rounded-2xl border-2 transition-all font-medium text-sm whitespace-nowrap",
                     isActive
                       ? "bg-white text-indigo-600 border-indigo-600 shadow-md"
-                      : "bg-white text-slate-500 border-transparent hover:border-slate-200 hover:text-slate-700"
+                      : "bg-white text-slate-500 border-transparent hover:border-slate-200 hover:text-slate-700",
                   )}
                 >
                   {Icon && <Icon className="w-5 h-5" />}
@@ -247,20 +247,20 @@ const ClientBusinessList = ({
                     key={pageNum}
                     onClick={() => {
                       startTransition(() =>
-                        updateUrl({ page: String(pageNum) })
+                        updateUrl({ page: String(pageNum) }),
                       );
                     }}
                     className={cn(
                       "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all",
                       initialMeta.currentPage === pageNum
                         ? "bg-indigo-600 text-white shadow-md"
-                        : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                        : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200",
                     )}
                   >
                     {pageNum}
                   </button>
                 );
-              }
+              },
             )}
           </div>
 

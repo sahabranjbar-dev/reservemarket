@@ -8,6 +8,10 @@ import { BookingStatus, NotificationType } from "@/constants/enums";
 import { createAuditLog } from "@/audit/audit.service";
 import { getNotificationContent } from "./utils";
 import { notificationQueue } from "@/queues/notification.queue";
+import {
+  removeBookingReminders,
+  scheduleBookingReminders,
+} from "@/utils/reminders";
 
 export async function updateBookingStatusAction(params: {
   bookingId: string;
@@ -97,6 +101,15 @@ export async function updateBookingStatusAction(params: {
       ],
       type: NotificationType.BOOKING,
     });
+
+    if (status === BookingStatus.CONFIRMED) {
+      await scheduleBookingReminders(booking);
+    } else if (
+      status === BookingStatus.REJECTED ||
+      status === BookingStatus.CANCELED
+    ) {
+      await removeBookingReminders(booking.id);
+    }
 
     revalidatePath("/dashboard/business/bookings");
 

@@ -7,7 +7,7 @@ const BusinessRegisterPage = () => {
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-700">
       <div className="flex flex-col lg:flex-row h-screen overflow-hidden">
         {/* ================= LEFT: FORM SECTION ================= */}
-        <div className="w-full lg:w-3/5 xl:w-1/2 h-full overflow-y-auto bg-white relative z-20 flex flex-col p-2">
+        <div className="w-full lg:w-3/5 xl:w-1/2 h-full overflow-y-auto bg-white relative z-20 flex flex-col p-12">
           {/* Header */}
           <div className="px-6 lg:px-12 pb-6 flex items-center justify-between border-b border-slate-100">
             <div className="flex items-center gap-2">

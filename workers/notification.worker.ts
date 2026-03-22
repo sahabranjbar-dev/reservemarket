@@ -1,28 +1,36 @@
 import "dotenv/config";
 import { Worker } from "bullmq";
-import { redis } from "@/lib/redis";
-import prisma from "@/utils/prisma";
+
+import { redis } from "../lib/redis";
+import {
+  handle1hReminder,
+  handle24hReminder,
+  handleCreateNotification,
+} from "./handlers";
 
 console.log("🔔 Notification Worker started");
 
 new Worker(
   "notification",
   async (job) => {
-    const { notifications, type } = job.data;
+    switch (job.name) {
+      case "CREATE_NOTIFICATION":
+        console.log("CREATE_NOTIFICATION");
 
-    for (const n of notifications) {
-      await prisma.notification.create({
-        data: {
-          userId: n.userId,
-          title: n.title,
-          body: n.body,
-          type,
-        },
-      });
+        return handleCreateNotification(job.data);
 
-      if (n.sendSMS) {
-        console.log(`📩 SMS sent to user ${n.userId}: ${n.body}`);
-      }
+      case "SEND_REMINDER_24H":
+        console.log("SEND_REMINDER_24H");
+
+        return handle24hReminder(job.data);
+
+      case "SEND_REMINDER_1H":
+        console.log("SEND_REMINDER_1H");
+
+        return handle1hReminder(job.data);
+
+      default:
+        throw new Error("Unknown job type");
     }
   },
   { connection: redis },

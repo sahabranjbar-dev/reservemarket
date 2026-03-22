@@ -1,18 +1,18 @@
 "use client";
 
-import React, { useState } from "react";
-import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import {
   Drawer,
   DrawerClose,
   DrawerContent,
+  DrawerDescription,
   DrawerHeader,
   DrawerTitle,
-  DrawerDescription,
   DrawerTrigger,
 } from "@/components/ui/drawer";
-import { Button } from "@/components/ui/button";
-import { Menu, X } from "lucide-react";
+import { Menu } from "lucide-react";
+import Link from "next/link";
+import { useState } from "react";
 import LoginButton from "../LoginButton/LoginButton";
 
 const menuItems = [

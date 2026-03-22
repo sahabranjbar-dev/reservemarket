@@ -5,8 +5,10 @@ import {
   BusinessRegistrationStatus,
   BusinessRole,
   BusinessType,
+  NotificationType,
   Role,
 } from "@/constants/enums";
+import { notificationQueue } from "@/queues/notification.queue";
 import { authOptions } from "@/utils/authOptions";
 import { convertToEnglishDigits } from "@/utils/common";
 import prisma from "@/utils/prisma";
@@ -87,10 +89,33 @@ export async function approveBusiness(
       return updated;
     });
 
-    // شبیه‌سازی ارسال پیامک
-    console.log(
-      `[SMS] Sending approval SMS to ${business.owner.phone}: Business approved`,
-    );
+    const admins = await prisma.user.findMany({
+      where: {
+        roles: {
+          every: {
+            role: "SUPER_ADMIN",
+          },
+        },
+      },
+    });
+
+    await notificationQueue.add("CREATE_NOTIFICATION", {
+      notifications: [
+        {
+          userId: updatedBusiness.ownerId,
+          title: "کسب‌وکار شما تائید شد",
+          body: `${updatedBusiness.ownerName} کسب‌وکار شما با نام ${updatedBusiness.businessName} تایید شد.`,
+          sendSMS: true,
+        },
+        ...admins.map((item) => ({
+          userId: item.id,
+          title: "کسب‌وکار جدید تائید شد",
+          body: `کسب‌وکار جدید با نام ${updatedBusiness.businessName} تائید شد`,
+          sendSMS: false,
+        })),
+      ],
+      type: NotificationType.SYSTEM,
+    });
 
     revalidatePath("/admin/dashboard/businesses");
 
@@ -162,10 +187,33 @@ export async function rejectBusiness(businessId: string, reason: string) {
       },
     });
 
-    // 2. ارسال پیامک (شبیه‌سازی)
-    console.log(
-      `[SMS] Sending rejection SMS to ${updatedBusiness.owner.phone}: Reason: ${reason}`,
-    );
+    const admins = await prisma.user.findMany({
+      where: {
+        roles: {
+          every: {
+            role: "SUPER_ADMIN",
+          },
+        },
+      },
+    });
+
+    await notificationQueue.add("CREATE_NOTIFICATION", {
+      notifications: [
+        {
+          userId: updatedBusiness.ownerId,
+          title: "کسب‌وکار شما رد شد",
+          body: `${updatedBusiness.ownerName} کسب‌وکار شما با نام ${updatedBusiness.businessName} رد شد.`,
+          sendSMS: true,
+        },
+        ...admins.map((item) => ({
+          userId: item.id,
+          title: "کسب‌وکار جدید رد شد",
+          body: `کسب‌وکار جدید با نام ${updatedBusiness.businessName} رد شد`,
+          sendSMS: false,
+        })),
+      ],
+      type: NotificationType.SYSTEM,
+    });
 
     // 3. بروزرسانی کش
     revalidatePath("/admin/dashboard/businesses");
@@ -215,6 +263,34 @@ export async function toggleBusinessStatus(id: string, isActive: boolean) {
         from: isActive,
         to: updatedBusiness.isActive,
       },
+    });
+
+    const admins = await prisma.user.findMany({
+      where: {
+        roles: {
+          every: {
+            role: "SUPER_ADMIN",
+          },
+        },
+      },
+    });
+
+    await notificationQueue.add("CREATE_NOTIFICATION", {
+      notifications: [
+        {
+          userId: updatedBusiness.ownerId,
+          title: `کسب‌وکار شما ${updatedBusiness.isActive ? "فعال" : "غیر فعال"} شد`,
+          body: `${updatedBusiness.ownerName} وضعیت کسب‌وکار شما با نام ${updatedBusiness.businessName} ${updatedBusiness.isActive ? "فعال" : "غیر فعال"} شد`,
+          sendSMS: true,
+        },
+        ...admins.map((item) => ({
+          userId: item.id,
+          title: `کسب‌وکار جدید ${updatedBusiness.isActive ? "فعال" : "غیر فعال"} شد`,
+          body: `کسب‌وکار جدید با نام ${updatedBusiness.businessName} ${updatedBusiness.isActive ? "فعال" : "غیر فعال"} شد`,
+          sendSMS: false,
+        })),
+      ],
+      type: NotificationType.SYSTEM,
     });
 
     revalidatePath("/dashboard/admin/businesses");
