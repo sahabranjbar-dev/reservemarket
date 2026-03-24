@@ -33,5 +33,5 @@ new Worker(
         throw new Error("Unknown job type");
     }
   },
-  { connection: redis },
+  { connection: redis as any },
 );
