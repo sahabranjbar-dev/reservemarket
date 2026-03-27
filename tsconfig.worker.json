@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmit": true,
+    "incremental": false
+  },
+  "include": [
+    "workers/**/*.ts",
+    "lib/redis.ts",
+    "utils/common.ts",
+    "utils/prisma.ts",
+    "utils/sms.ts",
+    "constants/enums.ts"
+  ],
+  "exclude": ["node_modules"]
+}

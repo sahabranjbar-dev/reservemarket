@@ -1,10 +1,17 @@
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "super-secret";
+const jwtSecret = process.env.JWT_SECRET || "";
+
+if (!jwtSecret) {
+  throw new Error("JWT_SECRET is required");
+}
 
 export function verifyJwt(token: string): { id: string; phone: string } | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as { id: string; phone: string };
+    return jwt.verify(token, jwtSecret) as unknown as {
+      id: string;
+      phone: string;
+    };
   } catch {
     return null;
   }

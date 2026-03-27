@@ -1,0 +1,61 @@
+services:
+  app:
+    build:
+      context: .
+      target: runner
+      args:
+        BASE_IMAGE: ${NODE_IMAGE:-docker.arvancloud.ir/library/node:20-bookworm}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PRISMA_SKIP_GENERATE: "1"
+      RUN_MIGRATIONS: "1"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-pro_reserve}?schema=public
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me}
+      SEED_SECRET: ${SEED_SECRET:-change-me}
+      ADMIN_MOBILES: ${ADMIN_MOBILES:-09111105440}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SMS_URL: ${SMS_URL:-}
+      SMS_API_KEY: ${SMS_API_KEY:-}
+      SMS_OTP_TEMPLATE_ID: ${SMS_OTP_TEMPLATE_ID:-}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    command: ["sh", "docker/entrypoint.sh", "yarn", "start:docker"]
+
+  worker:
+    build:
+      context: .
+      target: runner
+      args:
+        BASE_IMAGE: ${NODE_IMAGE:-docker.arvancloud.ir/library/node:20-bookworm}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PRISMA_SKIP_GENERATE: "1"
+      RUN_MIGRATIONS: "0"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-pro_reserve}?schema=public
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me}
+      SEED_SECRET: ${SEED_SECRET:-change-me}
+      ADMIN_MOBILES: ${ADMIN_MOBILES:-09111105440}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SMS_URL: ${SMS_URL:-}
+      SMS_API_KEY: ${SMS_API_KEY:-}
+      SMS_OTP_TEMPLATE_ID: ${SMS_OTP_TEMPLATE_ID:-}
+    command: ["sh", "docker/entrypoint.sh", "yarn", "worker"]
