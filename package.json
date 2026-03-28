@@ -4,14 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:docker": "next dev -H 0.0.0.0",
-    "postinstall": "prisma generate",
     "build": "next build",
     "start": "next start",
-    "start:docker": "next start -H 0.0.0.0",
-    "worker": "npx tsx workers/notification.worker.ts",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate:deploy": "prisma migrate deploy",
+    "poststart": "npx prisma generate && npx prisma migrate deploy",
     "lint": "eslint"
   },
   "dependencies": {
