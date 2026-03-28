@@ -6,7 +6,6 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "poststart": "npx prisma generate && npx prisma migrate deploy",
     "lint": "eslint"
   },
   "dependencies": {
