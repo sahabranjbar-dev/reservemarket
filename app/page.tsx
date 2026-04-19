@@ -220,7 +220,7 @@ const HomePage = () => {
       {/* Features for Customers */}
       <section className="py-24 bg-slate-50 relative overflow-hidden">
         {/* Subtle Pattern  bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]*/}
-        <div className="absolute inset-0 opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+        <div className="absolute inset-0 opacity-[0.03]"></div>
 
         <div className="container mx-auto px-6 relative z-10">
           <div className="text-center max-w-2xl mx-auto mb-16">
@@ -281,7 +281,8 @@ const HomePage = () => {
       <BookingManagementSection />
 
       {/* CTA Section */}
-      <section className="py-24 relative overflow-hidden bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+      {/*  bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] */}
+      <section className="py-24 relative overflow-hidden">
         <div className="absolute inset-0 bg-linear-to-r from-indigo-600 via-purple-700 to-indigo-800"></div>
         <div className="absolute inset-0  opacity-10"></div>
         {/* Decorative circles */}

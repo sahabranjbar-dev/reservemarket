@@ -22,7 +22,7 @@ const config: runtime.GetPrismaClientConfig = {
       "value": "prisma-client"
     },
     "output": {
-      "value": "/Users/sahab/projects/reserv-market/prisma/generated/prisma",
+      "value": "/Users/sahab/projects/reserve-market/prisma/generated/prisma",
       "fromEnvVar": null
     },
     "config": {
@@ -40,7 +40,7 @@ const config: runtime.GetPrismaClientConfig = {
       }
     ],
     "previewFeatures": [],
-    "sourceFilePath": "/Users/sahab/projects/reserv-market/prisma/schema.prisma",
+    "sourceFilePath": "/Users/sahab/projects/reserve-market/prisma/schema.prisma",
     "isCustomOutput": true
   },
   "relativePath": "../..",
@@ -50,7 +50,7 @@ const config: runtime.GetPrismaClientConfig = {
     "db"
   ],
   "activeProvider": "postgresql",
-  "postinstall": false,
+  "postinstall": true,
   "inlineDatasources": {
     "db": {
       "url": {

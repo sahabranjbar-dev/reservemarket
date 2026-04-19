@@ -104,20 +104,20 @@ export async function POST(request: NextRequest) {
     const templateId = process.env.SMS_OTP_TEMPLATE_ID!;
 
     // 6. ارسال پیامک
-    // const smsSent = await sendSMS(phone, templateId, [
-    //   { name: "Code", value: code },
-    // ]);
-    // if (!smsSent) {
-    //   await createLog({
-    //     level: "ERROR",
-    //     message: "ارسال پیامک OTP با خطا مواجه شد",
-    //     context: { phone, code },
-    //   });
-    //   return NextResponse.json(
-    //     { error: "ارسال پیامک با خطا مواجه شد." },
-    //     { status: 500 },
-    //   );
-    // }
+    const smsSent = await sendSMS(phone, templateId, [
+      { name: "CODE", value: code },
+    ]);
+    if (!smsSent) {
+      await createLog({
+        level: "ERROR",
+        message: "ارسال پیامک OTP با خطا مواجه شد",
+        context: { phone, code },
+      });
+      return NextResponse.json(
+        { error: "ارسال پیامک با خطا مواجه شد." },
+        { status: 500 },
+      );
+    }
 
     console.log(code, "code");
 
